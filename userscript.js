@@ -114,18 +114,30 @@
             function addAnkiMenuButton(){
                 if(mainHeader.querySelector('#anki-menu-button')) return; // nothing to be done
 
-                if(mainHeader.classList.contains("mobile")){ // mobile layout
+                let ankiButton = document.createElement('button');
+                ankiButton.style.backgroundImage = "url(https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Anki-icon.svg/800px-Anki-icon.svg.png)";
+                ankiButton.style.backgroundRepeat = "no-repeat";
+                ankiButton.style.backgroundSize = "contain";
+                ankiButton.style.width = "40px";
+                ankiButton.id = "anki-menu-button"
+                ankiButton.onclick = async () => {
+                    console.log(wordSet);
+                }
 
+                if(mainHeader.classList.contains("mobile")){ // mobile layout
+                    mainHeader.appendChild(ankiButton);
                 }
                 else{ // desktop layout
-
+                    const parentEl = mainHeader.querySelector("div.top-row>div.gap");
+                    if(parentEl)
+                        parentEl.appendChild(ankiButton);
                 }
             }
 
             addAnkiMenuButton();
 
             let attributeChangeObserver = new MutationObserver(addAnkiMenuButton);
-            mainHeaderObserver.observe(mainHeader, { attributes: true, childList: false, subtree: false });
+            mainHeaderObserver.observe(mainHeader, { attributes: true, childList: true, subtree: true });
         }
     }
 })();
