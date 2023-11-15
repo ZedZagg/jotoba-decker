@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Jotoba Decker
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/ZedZagg
 // @version      0.1
 // @description  Build anki decks from Jotoba.de
 // @author       ZedZagg
@@ -23,7 +23,7 @@
     mainHeaderObserver.observe(document, observerProperties)
 
     // load saved word set
-    let wordSet = new Set();
+    let wordSet;
     GM.getValue( "wordSet", wordSet )
         .then(value => { wordSet = new Set(value);});
 
@@ -62,6 +62,7 @@
         observer.observe(observedNode, observerProperties); // back
     }
 
+    // create, configure and add an "add to anki deck" button on a div.word-entry node
     function addAnkiButton(wordEntryNode){
         let headNode = wordEntryNode.querySelector('.entry-head');
 
@@ -80,10 +81,23 @@
         ankiButton.style.width = "15px";                                           // No, I won't.
         ankiButton.style.marginLeft = "auto";                                      // If it bothers you, you write the code.
         ankiButton.style.marginRight = "20px";
+
+        // add/remove word from saved word set on click
         ankiButton.onclick = async () => {
-            let data = await fetchWordDetails(word);
-            addWordToCollection(data);
+            if(!wordSet.has(word)){
+                let data = await fetchWordDetails(word);
+                await addWordToCollection(data);
+                ankiButton.style.opacity = 1.0;
+            }
+            else{
+                await deleteWordFromCollection(word);
+                ankiButton.style.opacity = 0.5;
+            }
         }
+
+        if(wordSet && !wordSet.has(word))
+            ankiButton.style.opacity = 0.5;
+
         headNode.appendChild(ankiButton);
     }
 
@@ -144,6 +158,12 @@
             let attributeChangeObserver = new MutationObserver(addAnkiMenuButton);
             mainHeaderObserver.observe(mainHeader, { attributes: true, childList: true, subtree: true });
         }
+    }
+
+    async function deleteWordFromCollection(word){
+        await GM.deleteValue(word);
+        wordSet.delete(word);
+        await GM.setValue( "wordSet", [...wordSet]);
     }
 
     async function addWordToCollection(wordData){
