@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Jotoba Decker
-// @namespace    https://github.com/ZedZagg
+// @namespace    http://tampermonkey.net/
 // @version      0.1
 // @description  Build anki decks from Jotoba.de
 // @author       ZedZagg
@@ -21,6 +21,11 @@
     // find main header so we can add our anki menu button to it
     let mainHeaderObserver = new MutationObserver(initMainHeader);
     mainHeaderObserver.observe(document, observerProperties)
+
+    // load saved word set
+    let wordSet = new Set();
+    GM.getValue( "wordSet", wordSet )
+        .then(value => { wordSet = new Set(value);});
 
     // watches mutations from the first page load and adds buttons where necessary
     // once the word list is found, the observer is disconnected and a new one placed on the list
@@ -77,10 +82,9 @@
         ankiButton.style.marginRight = "20px";
         ankiButton.onclick = async () => {
             let data = await fetchWordDetails(word);
-            console.log(data)
+            addWordToCollection(data);
         }
         headNode.appendChild(ankiButton);
-
     }
 
     function createAnkiCardString(wordDetails){
@@ -126,6 +130,7 @@
 
                 if(mainHeader.classList.contains("mobile")){ // mobile layout
                     mainHeader.appendChild(ankiButton);
+
                 }
                 else{ // desktop layout
                     const parentEl = mainHeader.querySelector("div.top-row>div.gap");
@@ -139,5 +144,12 @@
             let attributeChangeObserver = new MutationObserver(addAnkiMenuButton);
             mainHeaderObserver.observe(mainHeader, { attributes: true, childList: true, subtree: true });
         }
+    }
+
+    async function addWordToCollection(wordData){
+        const key = wordData.reading.kanji;
+        wordSet.add(key);
+        await GM.setValue( "wordSet", [...wordSet]);
+        await GM.setValue( key, wordData);
     }
 })();
