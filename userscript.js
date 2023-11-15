@@ -24,7 +24,8 @@
 
     // load saved word set
     let wordSet;
-    GM.getValue( "wordSet", wordSet )
+    const wordSetStorageKey = "wordSet";
+    GM.getValue(wordSetStorageKey, null)
         .then(value => { wordSet = new Set(value);});
 
     // watches mutations from the first page load and adds buttons where necessary
@@ -105,6 +106,7 @@
 
     }
 
+    // fetch word details from jotoba backend
     async function fetchWordDetails(word){
         const query = {
                          "query": word,
@@ -124,6 +126,7 @@
         return data.words[0];
     }
 
+    // populate the main header on the jotoba page with an anki menu button
     function initMainHeader(mutations, observer){
         const mainHeader = document.getElementById('mainHeader');
         if(mainHeader){
@@ -161,15 +164,20 @@
     }
 
     async function deleteWordFromCollection(word){
-        await GM.deleteValue(word);
+        let wordDeletePromise = GM.deleteValue(word);
         wordSet.delete(word);
-        await GM.setValue( "wordSet", [...wordSet]);
+        let setSavePromise = GM.setValue( wordSetStorageKey, [...wordSet]);
+        await Promise.all([wordDeletePromise, setSavePromise]);
     }
 
     async function addWordToCollection(wordData){
         const key = wordData.reading.kanji;
+
         wordSet.add(key);
-        await GM.setValue( "wordSet", [...wordSet]);
-        await GM.setValue( key, wordData);
+        let setSavePromise = GM.setValue( wordSetStorageKey, [...wordSet]);
+
+        let wordSavePromise = GM.setValue( key, wordData);
+
+        await Promise.all([setSavePromise, wordSavePromise]);
     }
 })();
