@@ -24,9 +24,7 @@
 
     // load saved word set
     let wordSet;
-    const wordSetStorageKey = "wordSet";
-    GM.getValue( wordSetStorageKey, new Set() )
-        .then(value => { wordSet = new Set(value);});
+    getWordList().then(value => { wordSet = value; });
 
     // watches mutations from the first page load and adds buttons where necessary
     // once the word list is found, the observer is disconnected and a new one placed on the list
@@ -85,18 +83,18 @@
 
         // add/remove word from saved word set on click
         ankiButton.onclick = async () => {
-            if(!wordSet.has(word)){
-                let data = await fetchWordDetails(word);
-                await addWordToCollection(data);
-                ankiButton.style.opacity = 1.0;
+            if(wordSet.includes(word)){
+                await deleteWord(word);
+                ankiButton.style.opacity = 0.5;
             }
             else{
-                await deleteWordFromCollection(word);
-                ankiButton.style.opacity = 0.5;
+                let wordData = await fetchWordDetails(word);
+                await saveWord(wordData);
+                ankiButton.style.opacity = 1.0;
             }
         }
 
-        if(wordSet && !wordSet.has(word))
+        if(wordSet && !wordSet.includes(word))
             ankiButton.style.opacity = 0.5;
 
         headNode.appendChild(ankiButton);
@@ -123,7 +121,9 @@
             body: JSON.stringify(query)
         });
         const data = await response.json();
-        return data.words[0];
+        const relevantEntry = data.words.find(x => getWordText(x) == word)
+        if(!relevantEntry) throw new Error(`Server response did not contain details for ${word}`);
+        return relevantEntry;
     }
 
     // populate the main header on the jotoba page with an anki menu button
@@ -141,7 +141,8 @@
             ankiButton.style.height = "45px";
             ankiButton.id = "anki-menu-button"
             ankiButton.onclick = async () => {
-                console.log(wordSet, await GM.listValues().then(value => value.filter(key => key !== "wordSet")));
+                console.log(wordSet);
+                for(const word of wordSet) console.log(await getWordData(word))
             }
 
             function addAnkiMenuButton(){
@@ -166,21 +167,37 @@
         }
     }
 
-    async function deleteWordFromCollection(word){
-        let wordDeletePromise = GM.deleteValue(word);
-        wordSet.delete(word);
-        let setSavePromise = GM.setValue( wordSetStorageKey, [...wordSet]);
-        await Promise.all([wordDeletePromise, setSavePromise]);
+    function getWordText(wordData){
+        return wordData.reading.kanji ?
+            wordData.reading.kanji :
+            wordData.reading.kana
     }
 
-    async function addWordToCollection(wordData){
-        const key = wordData.reading.kanji;
-
-        wordSet.add(key);
-        let setSavePromise = GM.setValue( wordSetStorageKey, [...wordSet]);
-
-        let wordSavePromise = GM.setValue( key, wordData);
-
-        await Promise.all([setSavePromise, wordSavePromise]);
+    async function saveWord(wordData){
+        const key = getWordText(wordData)
+        await GM.setValue( key, wordData);
+        wordSet = await getWordList();
     }
+
+    async function deleteWord(wordText){
+        var index = wordSet.indexOf(wordText);
+        if (index !== -1) {
+            wordSet.splice(index, 1);
+        }
+        await GM.deleteValue(wordText);
+    }
+
+    async function getWordData(wordText){
+        return await GM.getValue(wordText, null)
+    }
+
+    async function getWordList(){
+        return await GM.listValues();
+    }
+
+    async function purgeStorage(){
+        const values = await GM.listValues();
+        for(const value of values) await GM.deleteValue(value);
+    }
+
 })();
