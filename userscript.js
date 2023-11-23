@@ -25,7 +25,7 @@
     // load saved word set
     let wordSet;
     const wordSetStorageKey = "wordSet";
-    GM.getValue(wordSetStorageKey, null)
+    GM.getValue( wordSetStorageKey, new Set() )
         .then(value => { wordSet = new Set(value);});
 
     // watches mutations from the first page load and adds buttons where necessary
@@ -130,30 +130,33 @@
     function initMainHeader(mutations, observer){
         const mainHeader = document.getElementById('mainHeader');
         if(mainHeader){
+            console.log("found main header", mainHeader)
             observer.disconnect()
+
+            let ankiButton = document.createElement('button');
+            ankiButton.style.backgroundImage = "url(https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Anki-icon.svg/800px-Anki-icon.svg.png)";
+            ankiButton.style.backgroundRepeat = "no-repeat";
+            ankiButton.style.backgroundSize = "contain";
+            ankiButton.style.width = "40px";
+            ankiButton.style.height = "45px";
+            ankiButton.id = "anki-menu-button"
+            ankiButton.onclick = async () => {
+                console.log(wordSet, await GM.listValues().then(value => value.filter(key => key !== "wordSet")));
+            }
 
             function addAnkiMenuButton(){
                 if(mainHeader.querySelector('#anki-menu-button')) return; // nothing to be done
 
-                let ankiButton = document.createElement('button');
-                ankiButton.style.backgroundImage = "url(https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Anki-icon.svg/800px-Anki-icon.svg.png)";
-                ankiButton.style.backgroundRepeat = "no-repeat";
-                ankiButton.style.backgroundSize = "contain";
-                ankiButton.style.width = "40px";
-                ankiButton.id = "anki-menu-button"
-                ankiButton.onclick = async () => {
-                    console.log(wordSet);
+                const parentEl = mainHeader.classList.contains("mobile") ?
+                                     mainHeader.querySelector("div.right") :
+                                     mainHeader.querySelector("div.top-row>div.utils-bundle");
+
+                if(!parentEl){
+                    console.error("Failed to find element to attach anki menu button to in main header", mainHeader)
+                    return;
                 }
 
-                if(mainHeader.classList.contains("mobile")){ // mobile layout
-                    mainHeader.appendChild(ankiButton);
-
-                }
-                else{ // desktop layout
-                    const parentEl = mainHeader.querySelector("div.top-row>div.gap");
-                    if(parentEl)
-                        parentEl.appendChild(ankiButton);
-                }
+                parentEl.appendChild(ankiButton);
             }
 
             addAnkiMenuButton();
