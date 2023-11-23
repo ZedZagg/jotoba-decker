@@ -8,6 +8,12 @@
 // @icon         https://jotoba.de/JotoBook.png
 // @grant        GM.getValue
 // @grant        GM.setValue
+
+// @require      https://raw.githubusercontent.com/eligrey/FileSaver.js/master/src/FileSaver.js
+// @require      https://raw.githubusercontent.com/Stuk/jszip/c00440a28addc800f924472bf351fc710e118776/dist/jszip.min.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js
+// @require      https://raw.githubusercontent.com/ZedZagg/genanki-js-local/main/dist/genanki.js
+
 // ==/UserScript==
 
 (function() {
@@ -140,10 +146,7 @@
             ankiButton.style.width = "40px";
             ankiButton.style.height = "45px";
             ankiButton.id = "anki-menu-button"
-            ankiButton.onclick = async () => {
-                console.log(wordSet);
-                for(const word of wordSet) console.log(await getWordData(word))
-            }
+            ankiButton.onclick = saveFile
 
             function addAnkiMenuButton(){
                 if(mainHeader.querySelector('#anki-menu-button')) return; // nothing to be done
@@ -198,6 +201,51 @@
     async function purgeStorage(){
         const values = await GM.listValues();
         for(const value of values) await GM.deleteValue(value);
+    }
+
+    async function saveFile(){
+        const sqlConfig = {
+            locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.wasm`
+        }
+        initSqlJs(sqlConfig).then(async function (sql) {
+
+            var m = new Model({
+                name: "Basic (and reversed card)",
+                id: "1543634829843",
+                flds: [
+                    { name: "Front" },
+                    { name: "Back" }
+                ],
+                req: [
+                    [ 0, "all", [ 0 ] ],
+                    [ 1, "all", [ 1 ] ]
+                ],
+                tmpls: [
+                    {
+                        name: "Card 1",
+                        qfmt: "{{Front}}",
+                        afmt: "{{FrontSide}}\n\n<hr id=answer>\n\n{{Back}}",
+                    },
+                    {
+                        name: "Card 2",
+                        qfmt: "{{Back}}",
+                        afmt: "{{FrontSide}}\n\n<hr id=answer>\n\n{{Front}}",
+                    }
+                ],
+            })
+
+            var d = new Deck(1276438724672, "Test Deck")
+
+            d.addNote(m.note(['this is front', 'this is back']))
+
+            var p = new Package()
+            p.addDeck(d)
+
+            console.log("Attempting to save file", p)
+
+            const zip = await p.generateZip('deck.apkg', sql)
+            saveAs(zip, 'deck.apkg');
+        });
     }
 
 })();
