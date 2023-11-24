@@ -215,23 +215,26 @@
                 name: "Jotoba Card",
                 id: modelId,
                 flds: [
+                    { name: "word" },
                     { name: "wordRuby" },
                     { name: "meaningsTable" },
-                    { name: "pitches" },
-                    { name: "tags" }
+                    { name: "pitches" },         // optional
+                    { name: "isCommon" },
+                    { name: "jlptLevel" }        // optional
 
                 ],
                 req: [
                     // template index 0 must have fields index 0, 1 ,2. Tags are optional.
-                    [ 0, "all", [ 0, 1, 2 ] ]
+                    [ 0, "all", [ 0, 1, 2, 4] ]
                 ],
                 tmpls: [
                     {
                         name: "Word",
-                        qfmt: "{{Front}}",
-                        afmt: "{{FrontSide}}\n\n<hr id=answer>\n\n{{Back}}",
+                        qfmt: frontFormat,
+                        afmt: backFormat,
                     }
                 ],
+                css: cardCSS
             })
 
             var deck = new Deck(263842878340, "Jotoba Cards")
@@ -239,10 +242,12 @@
             for(const key of wordSet){
                 const wordData = await getWordData(key)
                 deck.addNote(m.note([
+                    getWordText(wordData),
                     generateRuby(wordData),
                     "meaningsTable",
-                    "pitches",
-                    "tags"
+                    generatePitches(wordData),
+                    wordData.common === true,
+                    null
                 ]))
             }
 
@@ -257,6 +262,8 @@
     }
 
     function generateRuby(wordData){
+        if(!wordData.reading.furigana) return `<ruby>${wordData.reading.kana}</ruby>`
+
         const furigana = wordData.reading.furigana              // example: "[男|おとこ]の[子|こ]"
         const characters = furigana.split(/\[([^\]]+)\]/)       //        : ["", "男|おとこ", "の", "子|こ", ""]
                                    .filter(x => x.length > 0)   //        : ["男|おとこ", "の", "子|こ"]
@@ -267,7 +274,96 @@
             outputAccumulator += c[0]
             if(c[1]) outputAccumulator += `<rt>${c[1]}</rt>`
         }
+        outputAccumulator += "</ruby>"
         return outputAccumulator;
     }
+
+    function generatePitches(wordData){
+        const pitches = wordData.pitch
+        if(!pitches) return null
+
+        let outputAccumulator = '<div class="pitches">';
+
+        for(const character of pitches){
+           const pitch = character.high ? 'high' : 'low';
+           outputAccumulator += `<span class="${pitch}">${character.part}</span>`;
+        }
+
+        outputAccumulator += "</div>";
+
+        return outputAccumulator;
+    }
+
+    const frontFormat = `
+<div class="main">
+  <div class="mainWord">
+    {{word}}
+  </div>
+</div>
+`;
+
+    const backFormat =`
+<div class="main">
+  <div class="mainWord">
+    {{wordRuby}}
+  </div>
+</div>
+
+<hr/>
+
+<div class="pitchContainer">
+  Pitches{{pitches}}
+</div>
+`
+
+
+    const cardCSS =`
+.card {
+  font-family: sans;
+  font-size: 20px;
+  text-align: center;
+  color: black;
+  background-color: white;
+}
+
+.main {
+  height: 80px;
+  position: relative;
+}
+
+.mainWord {
+  font-size: 50px;
+  position: absolute;
+  bottom: 0px;
+  width: 100%
+}
+
+.pitchContainer {
+  float: right;
+  margin-right: 20px;
+  color: grey;
+}
+
+.pitches {
+  color: green;
+
+  .high {
+    border-top: 1px solid grey;
+
+	+ .low {
+	  border-left: 1px solid grey
+    }
+  }
+
+  .low {
+    border-bottom: 1px solid grey;
+
+    + .high {
+      border-left: 1px solid grey
+    }
+  }
+}
+`
+
 
 })();
