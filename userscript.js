@@ -204,48 +204,70 @@
     }
 
     async function saveFile(){
+        // identifiers generated once with "+new Date" and hardcoded. This keeps it unique enough but consistent.
+        const modelId = "1700793219903"
+        const deckId = 1700793245715
         const sqlConfig = {
             locateFile: filename => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.wasm`
         }
         initSqlJs(sqlConfig).then(async function (sql) {
-
             var m = new Model({
-                name: "Basic (and reversed card)",
-                id: "1543634829843",
+                name: "Jotoba Card",
+                id: modelId,
                 flds: [
-                    { name: "Front" },
-                    { name: "Back" }
+                    { name: "wordRuby" },
+                    { name: "meaningsTable" },
+                    { name: "pitches" },
+                    { name: "tags" }
+
                 ],
                 req: [
-                    [ 0, "all", [ 0 ] ],
-                    [ 1, "all", [ 1 ] ]
+                    // template index 0 must have fields index 0, 1 ,2. Tags are optional.
+                    [ 0, "all", [ 0, 1, 2 ] ]
                 ],
                 tmpls: [
                     {
-                        name: "Card 1",
+                        name: "Word",
                         qfmt: "{{Front}}",
                         afmt: "{{FrontSide}}\n\n<hr id=answer>\n\n{{Back}}",
-                    },
-                    {
-                        name: "Card 2",
-                        qfmt: "{{Back}}",
-                        afmt: "{{FrontSide}}\n\n<hr id=answer>\n\n{{Front}}",
                     }
                 ],
             })
 
-            var d = new Deck(1276438724672, "Test Deck")
+            var deck = new Deck(263842878340, "Jotoba Cards")
 
-            d.addNote(m.note(['this is front', 'this is back']))
+            for(const key of wordSet){
+                const wordData = await getWordData(key)
+                deck.addNote(m.note([
+                    generateRuby(wordData),
+                    "meaningsTable",
+                    "pitches",
+                    "tags"
+                ]))
+            }
 
             var p = new Package()
-            p.addDeck(d)
+            p.addDeck(deck)
 
             console.log("Attempting to save file", p)
 
             const zip = await p.generateZip('deck.apkg', sql)
             saveAs(zip, 'deck.apkg');
         });
+    }
+
+    function generateRuby(wordData){
+        const furigana = wordData.reading.furigana              // example: "[男|おとこ]の[子|こ]"
+        const characters = furigana.split(/\[([^\]]+)\]/)       //        : ["", "男|おとこ", "の", "子|こ", ""]
+                                   .filter(x => x.length > 0)   //        : ["男|おとこ", "の", "子|こ"]
+                                   .map(x => x.split('|'));     //        : [["男", "おとこ"], ["の"], ["子", "こ"]]
+
+        let outputAccumulator = "<ruby>";
+        for(const c of characters){
+            outputAccumulator += c[0]
+            if(c[1]) outputAccumulator += `<rt>${c[1]}</rt>`
+        }
+        return outputAccumulator;
     }
 
 })();
