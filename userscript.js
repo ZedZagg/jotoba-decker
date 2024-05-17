@@ -437,9 +437,13 @@ tr:nth-child(even) {
   .sense{
     width: 60px;
     text-align: left;
+    font-size: 13px;
+    color: lightgrey;
   }
   .gloss{
     text-align: right;
+    font-size: 20px;
+    color: white;
   }
 }
 
