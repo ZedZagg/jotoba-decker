@@ -8,6 +8,9 @@
 // @icon         https://jotoba.de/JotoBook.png
 // @grant        GM.getValue
 // @grant        GM.setValue
+// @grant        GM.deleteValue
+// @grant        GM.listValues
+// @grant        GM.log
 
 // @require      https://raw.githubusercontent.com/eligrey/FileSaver.js/master/src/FileSaver.js
 // @require      https://raw.githubusercontent.com/Stuk/jszip/c00440a28addc800f924472bf351fc710e118776/dist/jszip.min.js
@@ -29,8 +32,11 @@
     mainHeaderObserver.observe(document, observerProperties)
 
     // load saved word set
-    let wordSet;
-    getWordList().then(value => { wordSet = value; });
+    let wordKeys = null;
+    GM.listValues().then(
+      (value) => { wordKeys = new Set(value);},
+      () => { wordKeys = new Set(); }
+    );
 
     // watches mutations from the first page load and adds buttons where necessary
     // once the word list is found, the observer is disconnected and a new one placed on the list
@@ -72,11 +78,19 @@
         let headNode = wordEntryNode.querySelector('.entry-head');
 
         // get word value
-        let word = "";
+        let word = { raw: "", key: ""};
         let ruby = headNode.querySelector('ruby');
-        for(let node of ruby.childNodes.entries()){
-            if(node[1].nodeName === "#text") word += node[1].textContent;
+        for(let i = 0; i < ruby.childNodes.length; i+=2){
+            let raw = ruby.childNodes[i].textContent;
+            let furigana = ruby.childNodes[i + 1].textContent;
+            word.raw += raw;
+            word.key += (furigana == "") ? raw : `[${raw}|${furigana}]`
         }
+
+        // jank hack to get jlpt level
+        let jlptLevel = [...headNode.querySelectorAll('.info-tag')]
+                                ?.find(x => x.innerText.startsWith('N'))
+                                ?.innerText ?? null
 
         // create/add anki button
         let ankiButton = document.createElement('button');
@@ -89,31 +103,29 @@
 
         // add/remove word from saved word set on click
         ankiButton.onclick = async () => {
-            if(wordSet.includes(word)){
-                await deleteWord(word);
+            if(wordKeys.has(word.key)){
+                await deleteWord(word.key);
                 ankiButton.style.opacity = 0.5;
             }
             else{
                 let wordData = await fetchWordDetails(word);
+                wordData.jlptLevel = jlptLevel;
+                wordData.raw = word.raw;
                 await saveWord(wordData);
                 ankiButton.style.opacity = 1.0;
             }
         }
 
-        if(wordSet && !wordSet.includes(word))
+        if(!wordKeys.has(word.key))
             ankiButton.style.opacity = 0.5;
 
         headNode.appendChild(ankiButton);
     }
 
-    function createAnkiCardString(wordDetails){
-
-    }
-
     // fetch word details from jotoba backend
     async function fetchWordDetails(word){
         const query = {
-                         "query": word,
+                         "query": word.raw,
                          "language": "English",
                          "no_english": false
                       };
@@ -127,8 +139,9 @@
             body: JSON.stringify(query)
         });
         const data = await response.json();
-        const relevantEntry = data.words.find(x => getWordText(x) == word)
-        if(!relevantEntry) throw new Error(`Server response did not contain details for ${word}`);
+
+        const relevantEntry = data.words.find(x => x.reading.furigana == word.key);
+        if(!relevantEntry) throw new Error(`Server response did not contain details for ${word.key}`);
         return relevantEntry;
     }
 
@@ -136,7 +149,7 @@
     function initMainHeader(mutations, observer){
         const mainHeader = document.getElementById('mainHeader');
         if(mainHeader){
-            console.log("found main header", mainHeader)
+            GM.log("found main header", mainHeader)
             observer.disconnect()
 
             let ankiButton = document.createElement('button');
@@ -156,7 +169,7 @@
                                      mainHeader.querySelector("div.top-row>div.utils-bundle");
 
                 if(!parentEl){
-                    console.error("Failed to find element to attach anki menu button to in main header", mainHeader)
+                    GM.log("Failed to find element to attach anki menu button to in main header", mainHeader)
                     return;
                 }
 
@@ -170,37 +183,29 @@
         }
     }
 
-    function getWordText(wordData){
-        return wordData.reading.kanji ?
-            wordData.reading.kanji :
-            wordData.reading.kana
-    }
-
     async function saveWord(wordData){
-        const key = getWordText(wordData)
-        await GM.setValue( key, wordData);
-        wordSet = await getWordList();
-    }
-
-    async function deleteWord(wordText){
-        var index = wordSet.indexOf(wordText);
-        if (index !== -1) {
-            wordSet.splice(index, 1);
+        const key = wordData.reading.furigana;
+        if(wordKeys.has(key)){
+            throw new Error(`word key ${key} already exists`)
         }
-        await GM.deleteValue(wordText);
+        await GM.setValue(key, wordData);
+        wordKeys.add(key);
+        GM.log(`Saved word: ${key}`)
     }
 
-    async function getWordData(wordText){
-        return await GM.getValue(wordText, null)
+    async function deleteWord(wordKey){
+        await GM.deleteValue(wordKey);
+        wordKeys.delete(wordKey);
     }
 
-    async function getWordList(){
-        return await GM.listValues();
+    async function getWordData(wordKey){
+        return await GM.getValue(wordKey, null)
     }
 
     async function purgeStorage(){
         const values = await GM.listValues();
         for(const value of values) await GM.deleteValue(value);
+        wordKeys.clear();
     }
 
     async function saveFile(){
@@ -219,13 +224,14 @@
                     { name: "wordRuby" },
                     { name: "meaningsTable" },
                     { name: "pitches" },         // optional
-                    { name: "isCommon" },
-                    { name: "jlptLevel" }        // optional
+                    { name: "isCommon" },        // optional
+                    { name: "jlptLevel" },       // optional
+                    { name: "audio" }            // optional
 
                 ],
                 req: [
                     // template index 0 must have fields index 0, 1 ,2. Tags are optional.
-                    [ 0, "all", [ 0, 1, 2, 4] ]
+                    [ 0, "all", [ 0, 1, 2] ]
                 ],
                 tmpls: [
                     {
@@ -239,15 +245,16 @@
 
             var deck = new Deck(263842878340, "Jotoba Cards")
 
-            for(const key of wordSet){
+            for(const key of wordKeys){
                 const wordData = await getWordData(key)
                 deck.addNote(m.note([
-                    getWordText(wordData),
+                    wordData.raw,
                     generateRuby(wordData),
-                    "meaningsTable",
+                    generateMeaningsTable(wordData),
                     generatePitches(wordData),
-                    wordData.common === true,
-                    null
+                    wordData.common === true ? "true" : "",
+                    wordData.jlptLevel,
+                    wordData.audio
                 ]))
             }
 
@@ -271,10 +278,29 @@
 
         let outputAccumulator = "<ruby>";
         for(const c of characters){
-            outputAccumulator += c[0]
-            if(c[1]) outputAccumulator += `<rt>${c[1]}</rt>`
+            outputAccumulator += c[0];
+            outputAccumulator += `<rt>${c[1] ?? ""}</rt>`;
         }
         outputAccumulator += "</ruby>"
+        return outputAccumulator;
+    }
+
+    function generateMeaningsTable(wordData){
+        const senses = wordData.senses;
+        let outputAccumulator = `<table class="meanings">`;
+        for(const s of senses){
+            outputAccumulator += `<tr class="sense"><td>`;
+            outputAccumulator += s.information ? `${s.information}<br/>` : "";
+            for(const p of s.pos){
+                outputAccumulator += `${JSON.stringify(p)}<br/>`; // fuck it this schema doesn't exist
+            }
+            outputAccumulator += `</td><td class="gloss">`;
+            for(const g of s.glosses){
+                outputAccumulator += `${g}<br/>`;
+            }
+            outputAccumulator += `</td></tr>`;
+        }
+        outputAccumulator += "</table>"
         return outputAccumulator;
     }
 
@@ -294,8 +320,14 @@
         return outputAccumulator;
     }
 
+
+
     const frontFormat = `
 <div class="main">
+  <div class="tags">
+    <div class="common"{{^isCommon}}style="display: none"{{/isCommon}}>C</div>
+    <div class="jlpt" {{^jlptLevel}}style="display: none"{{/jlptLevel}}>{{jlptLevel}}</div>
+  </div>
   <div class="mainWord">
     {{word}}
   </div>
@@ -304,6 +336,10 @@
 
     const backFormat =`
 <div class="main">
+  <div class="tags">
+    <div class="common"{{^isCommon}}style="display: none"{{/isCommon}}>C</div>
+    <div class="jlpt" {{^jlptLevel}}style="display: none"{{/jlptLevel}}>{{jlptLevel}}</div>
+  </div>
   <div class="mainWord">
     {{wordRuby}}
   </div>
@@ -314,16 +350,37 @@
 <div class="pitchContainer">
   Pitches{{pitches}}
 </div>
-`
+
+{{meaningsTable}}
+<audio controls src="https://jotoba.de{{audio}}"></audio>
+`;
 
 
     const cardCSS =`
 .card {
-  font-family: sans;
+  font-family: Overpass,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen,Ubuntu,Cantarell,Fira Sans,Droid Sans,Helvetica Neue,sans-serif;
   font-size: 20px;
   text-align: center;
   color: black;
   background-color: white;
+}
+
+.tags {
+  position: absolute;
+
+	>div {
+		height: 31px;
+		width: 31px;
+		border-radius: 50%;
+		margin-bottom: 5px;
+	}
+
+	.jlpt{
+		background-color: #434674;
+	}
+	.common{
+		background-color: #216125;
+	}
 }
 
 .main {
@@ -341,6 +398,7 @@
 .pitchContainer {
   float: right;
   margin-right: 20px;
+  margin-left: 20px;
   color: grey;
 }
 
@@ -363,7 +421,31 @@
     }
   }
 }
-`
 
+tr:nth-child(even) {
+		background: rgba(200,200,200,0.1);
+}
+
+.meanings {
+  overflow-y: scroll;
+  height: 250px;
+  display: block;
+
+  :nth-child(2){
+	}
+
+  .sense{
+    width: 60px;
+    text-align: left;
+  }
+  .gloss{
+    text-align: right;
+  }
+}
+
+audio {
+	padding-top: 20px;
+}
+`
 
 })();
